@@ -218,7 +218,7 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Activity size={17} /></span><span>trade<span className="brand-accent">log</span></span></div>
+        <div className="brand"><span className="brand-mark"><Activity size={17} /></span><span>edg<span className="brand-accent">log</span></span></div>
         <div className="account-switcher"><span className="account-dot" /><span><small>ACCOUNT</small><strong>MT5 account</strong></span><ChevronDown size={15} /></div>
         <nav>{navItems.map(({ label, icon: Icon }) => <button key={label} className={activeNav === label ? 'nav-item active' : 'nav-item'} onClick={() => setActiveNav(label)}><Icon size={18} /><span>{label}</span>{label === 'Trades' && <span className="nav-count">{journalTrades.length}</span>}</button>)}</nav>
         <div className="sidebar-bottom"><div className="sync-card"><div className="sync-title"><span className="live-dot" /> MT5 connection</div><p>{syncSummary}</p><button onClick={syncMt5} disabled={syncing}><RefreshCw size={14} className={syncing ? 'spin' : ''} /> {syncing ? 'Syncing...' : 'Sync now'}</button></div><div className="profile"><div className="avatar">TL</div><div><strong>Personal journal</strong><span>Read-only workspace</span></div><MoreHorizontal size={18} /></div></div>
