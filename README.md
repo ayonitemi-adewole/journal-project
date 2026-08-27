@@ -4,7 +4,7 @@ Personal MT5 trading journal dashboard.
 
 ## Development
 
-Run the frontend with `npm run dev` and the local SQLite API with `npm run api`.
+Run the frontend and local SQLite API together with `npm run dev`. Vite proxies `/api` requests to the API on port 3001.
 The API creates `server/journal.db` on first start and exposes:
 
 - `GET /api/health`
@@ -18,7 +18,7 @@ The API is read-only with respect to MT5. It stores imported trades and journal 
 
 ## Remote deployment
 
-The browser can use a hosted API by creating a root `.env` file with `VITE_API_URL=https://your-api-domain.example`. For a private deployment, set the same random value in `VITE_API_KEY` and `TRADELOG_API_KEY`, set `API_CORS_ORIGIN` to the frontend origin, and run the API with `API_HOST=0.0.0.0`. Put HTTPS in front of the API with a reverse proxy such as Caddy or nginx. The Windows VPS running the API must have MT5 installed; your personal computer does not.
+The recommended production setup is a Windows VPS with MT5 installed. Caddy serves the Vite `dist` folder and forwards `/api/*` to the Node API, so the browser uses same-origin API requests and no frontend API URL is needed. Follow `deploy/README.md` for the complete setup.
 
 ## MT5 import
 
