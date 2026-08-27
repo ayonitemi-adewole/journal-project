@@ -72,6 +72,17 @@ const API_BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const API_HEADERS: Record<string, string> = import.meta.env.VITE_API_KEY
   ? { "X-TradeLog-Key": import.meta.env.VITE_API_KEY }
   : {};
+const readApiResponse = async <T,>(response: Response): Promise<T> => {
+  const body = await response.text();
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    const contentType = response.headers.get("content-type") || "unknown";
+    throw new Error(
+      `The API returned a non-JSON response (${response.status}, ${contentType}). Check that VITE_API_URL points to the Node API or that your host proxies /api to it.`,
+    );
+  }
+};
 const emptyTrades: Trade[] = [];
 const todayLabel = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
@@ -136,9 +147,9 @@ function App() {
         headers: API_HEADERS,
       });
       if (!response.ok) throw new Error("Trade API unavailable");
-      const payload = (await response.json()) as {
+      const payload = await readApiResponse<{
         trades?: Record<string, unknown>[];
-      };
+      }>(response);
       setJournalTrades(payload.trades?.map(apiTrade) || []);
     } catch {
       // Keep the dashboard usable while the local API is stopped.
@@ -351,7 +362,7 @@ function App() {
           terminalPath: mt5TerminalPath,
         }),
       });
-      const result = (await response.json()) as { error?: string };
+      const result = await readApiResponse<{ error?: string }>(response);
       if (!response.ok) throw new Error(result.error || "MT5 sync failed");
       await loadTrades();
       setSynced(true);
