@@ -23,6 +23,7 @@ if ENV_FILE.exists():
 
 API_URL = os.getenv("TRADELOG_API_URL", "http://localhost:3001/api/import")
 TRADELOG_API_KEY = os.getenv("TRADELOG_API_KEY", "")
+ACCOUNT_KEY = os.getenv("TRADELOG_ACCOUNT_KEY", "")
 MT5_LOGIN = os.getenv("MT5_LOGIN")
 MT5_PASSWORD = os.getenv("MT5_PASSWORD")
 MT5_SERVER = os.getenv("MT5_SERVER")
@@ -86,7 +87,7 @@ def reconstruct_positions(mt5: Any, deals: Any) -> list[dict[str, Any]]:
 
 
 def post_import(trades: list[dict[str, Any]]) -> dict[str, Any]:
-    payload = json.dumps({"trades": trades}).encode("utf-8")
+    payload = json.dumps({"trades": trades, "accountKey": ACCOUNT_KEY}).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if TRADELOG_API_KEY:
         headers["X-TradeLog-Key"] = TRADELOG_API_KEY
@@ -123,6 +124,10 @@ def main() -> None:
         if deals is None:
             raise SystemExit(f"MT5 history request failed: {mt5.last_error()}")
         trades = reconstruct_positions(mt5, deals)
+        if not ACCOUNT_KEY:
+            raise SystemExit("Account scope was not provided by the API.")
+        for trade in trades:
+            trade["id"] = f"{ACCOUNT_KEY}-{trade['id']}"
         result = post_import(trades)
         print(json.dumps({"mt5_connected": True, **result}, indent=2))
     finally:

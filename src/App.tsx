@@ -129,12 +129,19 @@ function App() {
   const [mt5Password, setMt5Password] = useState("");
   const [mt5Server, setMt5Server] = useState("");
   const [mt5TerminalPath, setMt5TerminalPath] = useState("");
+  const [accountKey, setAccountKey] = useState(
+    () => window.localStorage.getItem("tradelog-account-key") || "",
+  );
   const [syncError, setSyncError] = useState("");
   const [journalTrades, setJournalTrades] = useState<Trade[]>(emptyTrades);
 
-  const loadTrades = async () => {
+  const loadTrades = async (selectedAccountKey = accountKey) => {
+    if (!selectedAccountKey) {
+      setJournalTrades([]);
+      return;
+    }
     try {
-      const response = await fetch(`${API_BASE_URL}/api/trades`, {
+      const response = await fetch(`${API_BASE_URL}/api/trades?accountKey=${encodeURIComponent(selectedAccountKey)}`, {
         headers: API_HEADERS,
       });
       if (!response.ok) throw new Error("Trade API unavailable");
@@ -355,7 +362,10 @@ function App() {
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error || "MT5 sync failed");
-      await loadTrades();
+      const selectedAccountKey = `${mt5Login.trim()}@${mt5Server.trim()}`;
+      setAccountKey(selectedAccountKey);
+      window.localStorage.setItem("tradelog-account-key", selectedAccountKey);
+      await loadTrades(selectedAccountKey);
       setSynced(true);
       setSyncSummary(
         `${(result as { newTrades?: number }).newTrades ?? 0} new trades imported`,

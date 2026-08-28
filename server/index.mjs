@@ -45,7 +45,11 @@ database.exec(`
   ) STRICT;
 `)
 
-const importTrade = database.prepare(`INSERT INTO trades (id, ticket, symbol, direction, volume, entry, exit, stop_loss, take_profit, open_time, close_time, profit, commission, swap, fees, magic_number, comment) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET ticket = excluded.ticket, symbol = excluded.symbol, direction = excluded.direction, volume = excluded.volume, entry = excluded.entry, exit = excluded.exit, stop_loss = excluded.stop_loss, take_profit = excluded.take_profit, open_time = excluded.open_time, close_time = excluded.close_time, profit = excluded.profit, commission = excluded.commission, swap = excluded.swap, fees = excluded.fees, magic_number = excluded.magic_number, comment = excluded.comment`)
+try { database.exec("ALTER TABLE trades ADD COLUMN account_key TEXT NOT NULL DEFAULT 'legacy'") } catch (error) {
+  if (!(error instanceof Error) || !error.message.includes('duplicate column name')) throw error
+}
+
+const importTrade = database.prepare(`INSERT INTO trades (id, account_key, ticket, symbol, direction, volume, entry, exit, stop_loss, take_profit, open_time, close_time, profit, commission, swap, fees, magic_number, comment) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_key = excluded.account_key, ticket = excluded.ticket, symbol = excluded.symbol, direction = excluded.direction, volume = excluded.volume, entry = excluded.entry, exit = excluded.exit, stop_loss = excluded.stop_loss, take_profit = excluded.take_profit, open_time = excluded.open_time, close_time = excluded.close_time, profit = excluded.profit, commission = excluded.commission, swap = excluded.swap, fees = excluded.fees, magic_number = excluded.magic_number, comment = excluded.comment`)
 const send = (response, status, payload) => {
   response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': corsOrigin, 'Access-Control-Allow-Headers': 'Content-Type, X-TradeLog-Key', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS' })
   response.end(JSON.stringify(payload))
@@ -58,7 +62,7 @@ const parseBody = async (request) => {
 const runConnector = (credentials) => new Promise((resolve, reject) => {
   const connector = spawn(process.platform === 'win32' ? 'python' : 'python3', ['connector/mt5_connector.py'], {
     cwd: join(dirname(fileURLToPath(import.meta.url)), '..'),
-    env: { ...process.env, MT5_LOGIN: credentials.login, MT5_PASSWORD: credentials.password, MT5_SERVER: credentials.server, MT5_TERMINAL_PATH: credentials.terminalPath || '' },
+    env: { ...process.env, MT5_LOGIN: credentials.login, MT5_PASSWORD: credentials.password, MT5_SERVER: credentials.server, MT5_TERMINAL_PATH: credentials.terminalPath || '', TRADELOG_ACCOUNT_KEY: credentials.accountKey },
   })
   let output = ''
   let errorOutput = ''
@@ -80,29 +84,36 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === 'GET' && url.pathname === '/api/health') return send(response, 200, { status: 'ok', database: 'sqlite', mt5: 'not_connected' })
     if (request.method === 'GET' && url.pathname === '/api/trades') {
-      const rows = database.prepare('SELECT * FROM trades ORDER BY close_time DESC').all()
+      const accountKey = url.searchParams.get('accountKey')
+      if (!accountKey) return send(response, 400, { error: 'An account key is required' })
+      const rows = database.prepare('SELECT * FROM trades WHERE account_key = ? ORDER BY close_time DESC').all(accountKey)
       return send(response, 200, { trades: rows, total: rows.length })
     }
     if (request.method === 'GET' && parts[0] === 'api' && parts[1] === 'trades' && parts[2]) {
-      const trade = database.prepare('SELECT * FROM trades WHERE id = ?').get(parts[2])
+      const accountKey = url.searchParams.get('accountKey')
+      const trade = accountKey ? database.prepare('SELECT * FROM trades WHERE id = ? AND account_key = ?').get(parts[2], accountKey) : null
       return trade ? send(response, 200, trade) : send(response, 404, { error: 'Trade not found' })
     }
     if (request.method === 'POST' && parts[0] === 'api' && parts[1] === 'trades' && parts[2] && parts[3] === 'journal') {
       const body = await parseBody(request)
+      const accountKey = String(body.accountKey || '')
+      if (!accountKey) return send(response, 400, { error: 'An account key is required' })
       const fields = ['strategy', 'setup', 'market_bias', 'entry_reason', 'exit_reason', 'went_well', 'went_wrong', 'lesson', 'emotion', 'screenshot_path']
       const updates = fields.filter((field) => Object.hasOwn(body, field))
       if (!updates.length) return send(response, 400, { error: 'No journal fields supplied' })
       const values = updates.map((field) => body[field])
-      database.prepare(`UPDATE trades SET ${updates.map((field) => `${field} = ?`).join(', ')} WHERE id = ?`).run(...values, parts[2])
-      return send(response, 200, database.prepare('SELECT * FROM trades WHERE id = ?').get(parts[2]))
+      database.prepare(`UPDATE trades SET ${updates.map((field) => `${field} = ?`).join(', ')} WHERE id = ? AND account_key = ?`).run(...values, parts[2], accountKey)
+      return send(response, 200, database.prepare('SELECT * FROM trades WHERE id = ? AND account_key = ?').get(parts[2], accountKey))
     }
     if (request.method === 'POST' && url.pathname === '/api/import') {
       const body = await parseBody(request)
       if (!Array.isArray(body.trades)) return send(response, 400, { error: 'Expected a trades array' })
-      const existing = new Set(database.prepare('SELECT id FROM trades').all().map((trade) => trade.id))
+      const accountKey = String(body.accountKey || '')
+      if (!accountKey) return send(response, 400, { error: 'An account key is required' })
+      const existing = new Set(database.prepare('SELECT id FROM trades WHERE account_key = ?').all(accountKey).map((trade) => trade.id))
       database.exec('BEGIN')
       try {
-        body.trades.forEach((trade) => importTrade.run(trade.id, trade.ticket, trade.symbol, trade.direction, trade.volume, trade.entry, trade.exit, trade.stop_loss ?? null, trade.take_profit ?? null, trade.open_time, trade.close_time, trade.profit, trade.commission ?? 0, trade.swap ?? 0, trade.fees ?? 0, trade.magic_number ?? null, trade.comment ?? null))
+        body.trades.forEach((trade) => importTrade.run(trade.id, accountKey, trade.ticket, trade.symbol, trade.direction, trade.volume, trade.entry, trade.exit, trade.stop_loss ?? null, trade.take_profit ?? null, trade.open_time, trade.close_time, trade.profit, trade.commission ?? 0, trade.swap ?? 0, trade.fees ?? 0, trade.magic_number ?? null, trade.comment ?? null))
         database.exec('COMMIT')
       } catch (error) {
         database.exec('ROLLBACK')
@@ -114,7 +125,8 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname === '/api/sync') {
       const body = await parseBody(request)
       if (!body.login || !body.password || !body.server) return send(response, 400, { error: 'Account ID, investor password, and broker server are required' })
-      const result = await runConnector(body)
+      const accountKey = `${String(body.login).trim()}@${String(body.server).trim()}`
+      const result = await runConnector({ ...body, accountKey })
       return send(response, 200, result)
     }
     return send(response, 404, { error: 'Route not found' })

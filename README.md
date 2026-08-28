@@ -16,6 +16,8 @@ The API creates `server/journal.db` on first start and exposes:
 
 The API is read-only with respect to MT5. It stores imported trades and journal metadata, but has no order placement or modification capability.
 
+Trades are scoped by MT5 account ID and broker server, so accounts cannot merge trades even when MT5 position IDs overlap. Rows created before account scoping are retained as `legacy` data and are not automatically assigned to a new account.
+
 ## Remote deployment
 
 The browser can use a hosted API by creating a root `.env` file with `VITE_API_URL=https://your-api-domain.example`. For a private deployment, set the same random value in `VITE_API_KEY` and `TRADELOG_API_KEY`, set `API_CORS_ORIGIN` to the frontend origin, and run the API with `API_HOST=0.0.0.0`. Put HTTPS in front of the API with a reverse proxy such as Caddy or nginx. The Windows VPS running the API must have MT5 installed; your personal computer does not.
